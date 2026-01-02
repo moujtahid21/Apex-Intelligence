@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import fastf1
 import fastf1.plotting
@@ -13,7 +14,14 @@ from components.ai_predictor import render_ai_predictor
 # 1. SETUP
 st.set_page_config(page_title="Apex Intelligence", layout="wide")
 fastf1.plotting.setup_mpl(mpl_timedelta_support=True, misc_mpl_mods=False, color_scheme='fastf1')
-fastf1.Cache.enable_cache('cache')
+
+# --- FIX START ---
+# Create the cache directory if it doesn't exist yet
+cache_dir = 'cache'
+if not os.path.exists(cache_dir):
+    os.makedirs(cache_dir)
+
+fastf1.Cache.enable_cache(cache_dir)
 
 
 # 2. LOAD DATA
