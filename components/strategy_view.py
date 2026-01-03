@@ -114,10 +114,10 @@ def render_strategy_view(session):
                     label = compound[0] if compound else "?"
 
                     # White text for most, black text for lighter compounds if needed
-                    text_color = 'black' if compound in ['HARD', 'MEDIUM', 'SOFT'] else 'white'
+                    #text_color = 'black' if compound in ['HARD', 'INTERMEDIATE'] else 'white'
 
                     ax.text(midpoint, driver_idx, label,
-                            va='center', ha='center', color='white',
+                            va='center', ha='center', color='black',
                             fontweight='bold', fontsize=8)
 
         ax.set_xlabel("Lap Number", color='white')
