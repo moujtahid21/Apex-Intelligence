@@ -15,8 +15,6 @@ from components.ai_predictor import render_ai_predictor
 st.set_page_config(page_title="Apex Intelligence", layout="wide")
 fastf1.plotting.setup_mpl(mpl_timedelta_support=True, misc_mpl_mods=False, color_scheme='fastf1')
 
-# --- FIX START ---
-# Create the cache directory if it doesn't exist yet
 cache_dir = 'cache'
 if not os.path.exists(cache_dir):
     os.makedirs(cache_dir)
