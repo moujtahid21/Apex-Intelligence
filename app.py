@@ -56,7 +56,7 @@ if 'session' in st.session_state:
     session = st.session_state['session']
 
     # --- NAVIGATION ---
-    st.markdown("""
+    st.html("""
         <style>
             div.stRadio > div[role="radiogroup"] {
                 display: flex;
@@ -67,7 +67,7 @@ if 'session' in st.session_state:
                 margin-bottom: 20px;
             }
         </style>
-    """, unsafe_allow_html=True)
+    """)
 
     views = [
         "🏁 Event Overview",

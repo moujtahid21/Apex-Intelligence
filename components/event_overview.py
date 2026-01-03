@@ -4,7 +4,16 @@ import numpy as np
 import fastf1
 import fastf1.plotting
 import os
-from utilities.helpers import crop_to_face, get_img_as_base64, calculate_tyre_health
+
+# --- IMPORT HELPERS ---
+from utils.helpers import (
+    crop_to_face,
+    get_img_as_base64,
+    calculate_tyre_health,
+    calculate_driver_rating
+)
+# --- IMPORT COMPONENTS ---
+from components.driver_card import render_driver_card
 
 
 def render_event_overview(session):
@@ -14,16 +23,24 @@ def render_event_overview(session):
         circuit_length_km = telemetry['Distance'].max() / 1000
         lap_time_str = str(fastest_lap['LapTime']).split('days')[-1][:-3]
 
+        # --- UPDATED WEATHER LOGIC ---
         try:
-            weather = session.weather_data.iloc[
-                session.weather_data.index.get_indexer([fastest_lap['Time']], method='nearest')]
-            track_temp = f"{weather['TrackTemp'].values[0]} °C"
-            air_temp = f"{weather['AirTemp'].values[0]} °C"
-            humidity = f"{weather['Humidity'].values[0]} %"
-        except:
+            # We use the robust get_weather_data() method which interpolates
+            # weather specifically for each lap in the session.
+            weather_data = session.laps.get_weather_data()
+
+            # We locate the specific row for our fastest lap using its index
+            weather_row = weather_data.loc[fastest_lap.name]
+
+            track_temp = f"{weather_row['TrackTemp']} °C"
+            air_temp = f"{weather_row['AirTemp']} °C"
+            humidity = f"{weather_row['Humidity']} %"
+        except Exception as e:
+            # Fallback if weather data is completely missing
             track_temp = "N/A"
             air_temp = "N/A"
             humidity = "N/A"
+            print(f"Weather Error: {e}")
 
         driver_code = fastest_lap['Driver']
         team_name = fastest_lap['Team']
@@ -33,8 +50,9 @@ def render_event_overview(session):
         except:
             full_name = driver_code
 
-        # Use Helper Function
+        # --- CALCULATIONS ---
         tyre_health, deg_msg = calculate_tyre_health(session, fastest_lap)
+        driver_rating = calculate_driver_rating(session, driver_code)
 
     except Exception as e:
         st.error(f"Error loading metrics: {e}")
@@ -42,6 +60,7 @@ def render_event_overview(session):
 
     st.subheader(f"📍 {session.event.EventName} - {session.name}")
 
+    # Top Metrics Row
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Track Temp", track_temp)
     m2.metric("Air Temp", air_temp)
@@ -58,14 +77,13 @@ def render_event_overview(session):
             "WET": "assets/tires/F1_tire_Pirelli_Cinturato_Blue_18.svg"
         }
         img_path = tyre_assets.get(compound, None)
-
-        # Use Helper Function
         b64_img = get_img_as_base64(img_path) if img_path else None
 
         if b64_img:
+            # Inline HTML for tyre icon
             st.markdown(f"""
                 <div style="display: flex; flex-direction: column; justify-content: flex-start;">
-                    <p style="font-size: 14px; color: rgba(250, 250, 250, 0.6); margin-bottom: 5px;">Fastest Tyre</p>
+                    <p style="font-size: 14px; color: rgba(250, 250, 250, 1.0); margin-bottom: 5px;">Fastest Tyre</p>
                     <div style="height: 35px; display: flex; align-items: center;">
                         <img src="data:image/svg+xml;base64,{b64_img}" style="max-height: 100%; width: auto;">
                     </div>
@@ -79,28 +97,24 @@ def render_event_overview(session):
 
     st.divider()
 
+    # Main Dashboard Area
     col_driver, col_map = st.columns([1, 2.5])
 
     with col_driver:
         with st.container(border=True):
             st.markdown("#### 🏆 Fastest Lap")
-            image_path = f"assets/drivers/{driver_code}.png"
 
+            # 1. Image Area
+            image_path = f"assets/drivers/{driver_code}.png"
             if os.path.exists(image_path):
-                # Use Helper Function
                 cropped_img = crop_to_face(image_path)
                 st.image(cropped_img, use_container_width=True)
             else:
                 st.image("https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png",
                          use_container_width=True)
 
-            st.markdown(f"""
-            <div style='text-align: center;'>
-                <h1 style='margin:0; padding:0; font-size: 1.5rem; color: #ff1801;'>{lap_time_str}</h1>
-                <h3 style='margin:0; padding:0;'>{full_name}</h3>
-                <p style='color: #888;'>{team_name}</p>
-            </div>
-            """, unsafe_allow_html=True)
+            # 2. Driver Stats (Using Component)
+            render_driver_card(lap_time_str, full_name, team_name, driver_rating)
 
     with col_map:
         try:
@@ -111,7 +125,6 @@ def render_event_overview(session):
 
 
 def render_enhanced_track_map(session, lap, circuit_info):
-    # This stays here because it is purely plotting logic specific to this view
     pos = lap.get_pos_data()
     fig, ax = plt.subplots(figsize=(12, 7))
 
@@ -144,9 +157,10 @@ def render_enhanced_track_map(session, lap, circuit_info):
             text_y = corner['Y'] + offset_y
             text_x, text_y = rotate([text_x, text_y], angle=track_angle)
 
-            ax.scatter(text_x, text_y, color='#1e1e1e', s=120, edgecolor='#888', zorder=2)
+            # Your custom setting (s=360) is preserved here
+            ax.scatter(text_x, text_y, color='#1e1e1e', s=360, edgecolor='#888', zorder=2)
             ax.text(text_x, text_y, txt,
-                    color='white', fontsize=9, fontweight='bold',
+                    color='white', fontsize=12, fontweight='bold',
                     ha='center', va='center', zorder=3)
 
     ax.set_aspect('equal')

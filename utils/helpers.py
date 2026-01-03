@@ -68,3 +68,41 @@ def calculate_tyre_health(session, lap):
 
     except Exception:
         return "N/A", "N/A"
+
+
+def calculate_driver_rating(session, driver_code):
+    """
+    Calculates a 0-10 rating based on the driver's theoretical best lap
+    (sum of the best sectors) vs their actual best lap.
+    """
+    try:
+        # Get all valid laps for the driver
+        laps = session.laps.pick_driver(driver_code).pick_quicklaps().pick_accurate()
+
+        if laps.empty:
+            return "N/A"
+
+        # 1. Actual Best Lap
+        actual_best = laps.pick_fastest()['LapTime'].total_seconds()
+
+        # 2. Theoretical Best Lap (Sum of Best Sectors)
+        best_s1 = laps['Sector1Time'].min().total_seconds()
+        best_s2 = laps['Sector2Time'].min().total_seconds()
+        best_s3 = laps['Sector3Time'].min().total_seconds()
+
+        theoretical_best = best_s1 + best_s2 + best_s3
+
+        # 3. Calculate Delta (Time left on track)
+        delta = actual_best - theoretical_best
+
+        # 4. Scoring: Start at 10. Lose 1 point for every 0.1s missed.
+        # This rewards precision/racecraft.
+        rating = 10.0 - (delta * 10)
+
+        # Clamp between 1.0 and 10.0
+        rating = max(1.0, min(10.0, rating))
+
+        return round(rating, 1)
+
+    except Exception:
+        return "N/A"
