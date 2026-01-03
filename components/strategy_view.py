@@ -6,7 +6,7 @@ from components.tyre_legend import TyreLegend
 
 
 # --- HELPER: STRATEGY INFO CARD ---
-@st.dialog("🏁 Tyre Strategy Guide")
+@st.dialog("🏁 Pit Stop Strategy")
 def show_strategy_card():
     # CSS to reduce padding inside the modal for a tighter fit
     st.markdown("""
@@ -57,20 +57,40 @@ def render_strategy_view(session):
     """
     st.subheader("Tyre Strategy & Stints")
 
-    # --- 1. PLOT GENERATION ---
-    # We use a Spinner because plotting all stints can take a second
+    # --- 1. DRIVER SELECTION (New Feature) ---
+    try:
+        # Get all drivers from the session results (usually sorted by position)
+        all_drivers = session.results['Abbreviation'].tolist()
+    except Exception as e:
+        st.error("Could not load driver list.")
+        return
+
+    # Default to Top 10 to keep the initial view clean but informative
+    default_drivers = all_drivers[:10] if len(all_drivers) >= 10 else all_drivers
+
+    selected_drivers = st.multiselect(
+        "Select Drivers to Compare",
+        all_drivers,
+        default=default_drivers
+    )
+
+    if not selected_drivers:
+        st.warning("Please select at least one driver to view their strategy.")
+        return
+
+    # --- 2. PLOT GENERATION ---
     with st.spinner("Analyzing tyre history..."):
-        fig, ax = plt.subplots(figsize=(10, 6))
+        # Dynamic height: 1 inch header + 0.5 inch per driver
+        # This ensures the chart doesn't look squashed if you select 20 drivers
+        fig_height = max(6, len(selected_drivers) * 0.5)
+
+        fig, ax = plt.subplots(figsize=(10, fig_height))
 
         # Dark Mode Plot Styling
         fig.patch.set_facecolor('none')
         ax.set_facecolor('#0E1117')
 
-        # Filter for top 5 drivers to keep chart readable
-        # (You can change this to 20 to see everyone)
-        top_drivers = session.results.iloc[:5]['Abbreviation']
-
-        for driver_idx, driver in enumerate(top_drivers):
+        for driver_idx, driver in enumerate(selected_drivers):
             driver_laps = session.laps.pick_driver(driver)
 
             # Group by Stint (continuous period on one set of tires)
@@ -86,19 +106,22 @@ def render_strategy_view(session):
                 duration = end_lap - start_lap + 1
 
                 # Plot the Bar
-                # height=0.6 makes the bars thinner and sleeker
                 ax.barh(driver, duration, left=start_lap, color=color, edgecolor='#111', height=0.6)
 
                 # Add Text Label inside the bar if it's wide enough
                 if duration > 3:
                     midpoint = start_lap + (duration / 2)
                     label = compound[0] if compound else "?"
+
+                    # White text for most, black text for lighter compounds if needed
+                    text_color = 'black' if compound in ['HARD', 'MEDIUM', 'SOFT'] else 'white'
+
                     ax.text(midpoint, driver_idx, label,
-                            va='center', ha='center', color='black' if compound in ['HARD', 'MEDIUM'] else 'white',
+                            va='center', ha='center', color='white',
                             fontweight='bold', fontsize=8)
 
         ax.set_xlabel("Lap Number", color='white')
-        ax.invert_yaxis()  # Put P1 at the top
+        ax.invert_yaxis()  # Put the first selected driver at the top
 
         # Remove borders for a cleaner look
         ax.spines['top'].set_visible(False)
@@ -115,10 +138,10 @@ def render_strategy_view(session):
 
         st.pyplot(fig)
 
-    # --- 2. CUSTOM LEGEND ---
+    # --- 3. CUSTOM LEGEND ---
     st.markdown("### Tyre Compound Legend")
 
-    # Define Assets
+    # Define Assets (Make sure these paths exist in your project!)
     tyre_assets = {
         "SOFT": "assets/tires/F1_tire_Pirelli_PZero_Red_18.svg",
         "MEDIUM": "assets/tires/F1_tire_Pirelli_PZero_Yellow_18.svg",
@@ -136,10 +159,9 @@ def render_strategy_view(session):
     ]
 
     # Render the HTML Component
-    # height=75 removes the gap we fixed earlier
     legend = TyreLegend(compounds=compounds_data, assets=tyre_assets, height=75)
     legend.show()
 
-    # --- 3. INFO BUTTON ---
+    # --- 4. INFO BUTTON ---
     if st.button("ℹ️ Strategy Info"):
         show_strategy_card()
