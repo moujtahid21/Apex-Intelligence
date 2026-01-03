@@ -3,43 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import fastf1
 import fastf1.plotting
-from PIL import Image
 import os
-import base64  # Added for image encoding
-
-
-def crop_to_face(image_path):
-    """
-    Crops the top 20% of a tall portrait image to focus on the face.
-    """
-    try:
-        img = Image.open(image_path)
-        width, height = img.size
-
-        # Crop logic for F1 portrait photos
-        target_height = int(width * 0.85)
-        img_cropped = img.crop((0, 0, width, target_height))
-        return img_cropped
-    except Exception as e:
-        return None
-
-
-def get_img_as_base64(file_path):
-    """
-    Reads an image file and converts it to a base64 string for HTML embedding.
-    """
-    if not os.path.exists(file_path):
-        return None
-    with open(file_path, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
+from utilities.helpers import crop_to_face, get_img_as_base64, calculate_tyre_health
 
 
 def render_event_overview(session):
-    """
-    Renders the metrics and track map for Tab 1 with a dashboard layout.
-    """
-    # --- 1. DATA PREPARATION ---
     try:
         fastest_lap = session.laps.pick_fastest()
         telemetry = fastest_lap.get_car_data().add_distance()
@@ -65,25 +33,23 @@ def render_event_overview(session):
         except:
             full_name = driver_code
 
+        # Use Helper Function
+        tyre_health, deg_msg = calculate_tyre_health(session, fastest_lap)
+
     except Exception as e:
         st.error(f"Error loading metrics: {e}")
         return
 
-    # --- 2. HEADER & METRICS ROW ---
     st.subheader(f"📍 {session.event.EventName} - {session.name}")
 
-    m1, m2, m3, m4, m5 = st.columns(5)
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Track Temp", track_temp)
     m2.metric("Air Temp", air_temp)
     m3.metric("Humidity", humidity)
     m4.metric("Circuit Length", f"{circuit_length_km:.3f} km")
 
-    # --- 5. CUSTOM METRIC FOR TYRE ---
     with m5:
-        # We use custom HTML to align the image perfectly with the text label
-        # This removes the standard Streamlit widget gap
         compound = fastest_lap['Compound'].upper()
-
         tyre_assets = {
             "SOFT": "assets/tires/F1_tire_Pirelli_PZero_Red_18.svg",
             "MEDIUM": "assets/tires/F1_tire_Pirelli_PZero_Yellow_18.svg",
@@ -91,15 +57,15 @@ def render_event_overview(session):
             "INTERMEDIATE": "assets/tires/F1_tire_Pirelli_Cinturato_Green_18.svg",
             "WET": "assets/tires/F1_tire_Pirelli_Cinturato_Blue_18.svg"
         }
-
         img_path = tyre_assets.get(compound, None)
+
+        # Use Helper Function
         b64_img = get_img_as_base64(img_path) if img_path else None
 
         if b64_img:
-            # HTML Block to mimic st.metric look but with an image value
             st.markdown(f"""
                 <div style="display: flex; flex-direction: column; justify-content: flex-start;">
-                    <p style="font-size: 14px; color: rgba(250, 250, 250, 1.0); margin-bottom: 5px;">Fastest Tyre</p>
+                    <p style="font-size: 14px; color: rgba(250, 250, 250, 0.6); margin-bottom: 5px;">Fastest Tyre</p>
                     <div style="height: 35px; display: flex; align-items: center;">
                         <img src="data:image/svg+xml;base64,{b64_img}" style="max-height: 100%; width: auto;">
                     </div>
@@ -108,9 +74,11 @@ def render_event_overview(session):
         else:
             st.metric("Fastest Tyre", compound)
 
+    with m6:
+        st.metric("Tyre Health", f"{tyre_health}%", delta=deg_msg, delta_color="inverse")
+
     st.divider()
 
-    # --- 3. MAIN CONTENT ---
     col_driver, col_map = st.columns([1, 2.5])
 
     with col_driver:
@@ -119,6 +87,7 @@ def render_event_overview(session):
             image_path = f"assets/drivers/{driver_code}.png"
 
             if os.path.exists(image_path):
+                # Use Helper Function
                 cropped_img = crop_to_face(image_path)
                 st.image(cropped_img, use_container_width=True)
             else:
@@ -142,9 +111,7 @@ def render_event_overview(session):
 
 
 def render_enhanced_track_map(session, lap, circuit_info):
-    """
-    Draws the track map with Turn Numbers.
-    """
+    # This stays here because it is purely plotting logic specific to this view
     pos = lap.get_pos_data()
     fig, ax = plt.subplots(figsize=(12, 7))
 

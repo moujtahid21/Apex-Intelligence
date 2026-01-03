@@ -3,7 +3,34 @@ import pandas as pd
 from io import BytesIO
 
 
-# --- HELPER CLASS ---
+# --- HELPER: INSTRUCTIONS DIALOG ---
+@st.dialog("🎮 Sim Racing Guide")
+def show_motec_guide():
+    st.markdown("""
+    ### How to Race Against the Pros
+
+    This tool exports real F1 telemetry into a format compatible with **MoTeC i2 Pro**, allowing you to compare your Assetto Corsa laps against the real pole position data.
+
+    #### 1. The Setup
+    * **Assetto Corsa:** You need the **ACTI** (Assetto Corsa Telemetry Interface) mod installed.
+    * **MoTeC i2 Pro:** Download the free analysis software from MoTeC.
+
+    #### 2. The Workflow
+    1.  **Record Your Lap:** Drive a clean lap in Assetto Corsa. ACTI will save a log file.
+    2.  **Export F1 Data:** Use this app to download the CSV for your target driver (e.g., Max Verstappen).
+    3.  **Import to MoTeC:** * Open MoTeC i2 Pro.
+        * Go to `File > Import` and select the F1 CSV you just downloaded.
+        * Then open your own ACTI log file in the same workspace.
+
+    #### 3. The Comparison
+    * You will now see two lines on your telemetry graphs.
+    * **Red Line:** Real F1 Driver (Reference).
+    * **Green Line:** You.
+    * Use the **Time Difference** channel to see exactly where you are losing time (braking too early, corner speed, etc.).
+    """)
+
+
+# --- HELPER CLASS: EXPORTER ---
 class MotecExporter:
     def __init__(self, session):
         self.session = session
@@ -72,7 +99,14 @@ class MotecExporter:
 # --- UI RENDERER ---
 def render_motec_view(session):
     st.subheader("Assetto Corsa / MoTeC Exporter")
-    st.markdown("Export telemetry to compare your Sim Racing laps against real F1 data in **MoTeC i2 Pro**.")
+
+    # Header with Info Button
+    col_head1, col_head2 = st.columns([0.85, 0.15])
+    with col_head1:
+        st.markdown("Export telemetry to compare your Sim Racing laps against real F1 data in **MoTeC i2 Pro**.")
+    with col_head2:
+        if st.button("ℹ️ Help"):
+            show_motec_guide()
 
     # 1. Load Drivers
     try:
@@ -103,7 +137,6 @@ def render_motec_view(session):
         ex_driver_code = driver_map.get(sel_driver_name, None)
 
         if ex_driver_code:
-            # Get laps and clean data
             driver_laps = session.laps.pick_driver(ex_driver_code).copy()
             driver_laps = driver_laps.loc[:, ~driver_laps.columns.duplicated()]
 
@@ -128,10 +161,8 @@ def render_motec_view(session):
             # Find the index of the fastest lap to set as default
             fastest_lap_idx = 0
             if fastest_lap_num != -1:
-                # Find row index where LapNumber matches fastest_lap_num
                 match = driver_laps.index[driver_laps['LapNumber'] == fastest_lap_num].tolist()
                 if match:
-                    # We need the integer position for the selectbox index, not the pandas index
                     fastest_lap_idx = driver_laps.reset_index().index[driver_laps['LapNumber'] == fastest_lap_num][0]
 
             with col2:
