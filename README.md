@@ -1,3 +1,5 @@
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Click_Here-2EA44F?style=for-the-badge&logo=streamlit&logoColor=white)](https://apex-intelligence.streamlit.app/)
+
 # 🏎️ Apex Intelligence: F1 Telemetry & AI Dashboard
 
 **Apex Intelligence** is a comprehensive Formula 1 telemetry analysis tool built with **Python** and **Streamlit**. It leverages the [FastF1](https://github.com/theOehrly/Fast-F1) library to visualize real-time race data, compare driver performance, simulate AI-driven lap predictions, and export data for sim racing (Assetto Corsa/MoTeC).
