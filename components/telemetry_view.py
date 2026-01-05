@@ -121,7 +121,7 @@ def render_telemetry_view(session):
 
     # Layout: Drivers | Channel | Corner | Heatmap Button
     # Adjusted ratios to fit the button comfortably
-    col_sel1, col_sel2, col_sel3, col_sel4 = st.columns([2, 1, 1, 0.8])
+    col_sel1, col_sel2, col_sel3, col_sel4 = st.columns([2, 1, 1, 0.8], vertical_alignment="bottom")
 
     with col_sel1:
         default_sel = drivers_list[:2] if len(drivers_list) >= 2 else drivers_list[:1]
@@ -150,8 +150,7 @@ def render_telemetry_view(session):
 
     # --- BUTTON TO TRIGGER POPUP ---
     with col_sel4:
-        st.write("")  # Spacer to align button with dropdowns
-        st.write("")
+        st.write('')  # Spacer for alignment
         if st.button("🗺️ Heatmaps", help="View track map comparison", use_container_width=True):
             if drivers:
                 show_heatmap_dialog(session, drivers, telemetry_channel)
