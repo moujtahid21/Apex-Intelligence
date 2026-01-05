@@ -145,7 +145,6 @@ def render_race_simulation(session):
                 driver_positions_list = []
                 for d in selected_drivers:
                     d_df = sim_data[d]['df']
-                    # Handle different array lengths safely
                     idx = min(i, len(d_df) - 1)
                     driver_positions_list.append({
                         'name': d,
@@ -154,16 +153,15 @@ def render_race_simulation(session):
                         'color': sim_data[d]['color']
                     })
 
-                # Generate Map Figure (using helper, but customized for N drivers)
-                # If your utils function only supports 2, we build it here dynamically:
                 fig = go.Figure()
 
-                # 1. Static Track Line
+                # 1. Static Track Line -> ADD showlegend=False
                 fig.add_trace(go.Scatter(
                     x=track_df['x'], y=track_df['y'],
                     mode='lines',
                     line=dict(color='#333', width=4),
-                    hoverinfo='skip'
+                    hoverinfo='skip',
+                    showlegend=False  # <--- FIX 1: Hides "trace 0" from legend
                 ))
 
                 # 2. Dynamic Driver Dots
@@ -185,8 +183,7 @@ def render_race_simulation(session):
                     yaxis=dict(visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
                 )
 
-                # Unique key prevents Streamlit from getting confused during animation
-                st.plotly_chart(fig, use_container_width=True, key=f"map_{i}")
+                st.plotly_chart(fig, use_container_width=True, key="live_map")
 
             with col_stats:
                 st.subheader("📊 Live Telemetry")
