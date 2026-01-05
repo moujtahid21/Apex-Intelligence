@@ -8,7 +8,7 @@ def get_replay_explanation():
     **🎮 Replay Controls**
     * **Auto-Play:** Check the box to watch the ghost car battle live.
     * **Manual Scrub:** Uncheck Auto-Play and use the slider to analyze specific corners.
-    * **Telemetry:** Bars indicate Throttle (Green) and Brake (Grey) intensity.
+    * **Telemetry:** Bars indicate Throttle (Green) and Brake (Red) intensity.
     """
 
 
