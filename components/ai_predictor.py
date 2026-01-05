@@ -1,189 +1,238 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import fastf1
+import fastf1.plotting
+import plotly.graph_objects as go
 import time
-import random
+
+# Import your helpers from utils
+# Ensure you have the 'utils' folder and 'replay.py' file created as discussed previously
+from utils.replay import create_telemetry_html, get_replay_explanation, get_track_map_fig
 
 
-class AIPredictor:
+# --- HELPER: PREPARE SIM DATA ---
+@st.cache_data
+def prepare_simulation_data(_session, drivers):
     """
-    Simulates a trained Transformer model for F1 Lap Time Prediction.
+    Prepares interpolated telemetry data for selected drivers
+    AND extracts the static track path for the map background.
     """
+    sim_data = {}
+    max_time = 0
+    track_df = pd.DataFrame()  # Default empty
 
-    def __init__(self):
-        # Base performance tiers (simulating learned embeddings)
-        self.team_performance = {
-            "Red Bull Racing": -1.2, "Ferrari": -0.8, "McLaren": -0.9,
-            "Mercedes": -0.7, "Aston Martin": -0.5, "VCARB": 0.0,
-            "Haas F1 Team": 0.1, "Williams": 0.2, "Alpine": 0.3, "Kick Sauber": 0.5
-        }
+    # 1. Get Track Layout (from the first driver's fastest lap)
+    try:
+        ref_driver = drivers[0]
+        ref_lap = _session.laps.pick_driver(ref_driver).pick_fastest()
+        ref_tel = ref_lap.get_telemetry()
+        track_df = pd.DataFrame({'x': ref_tel['X'], 'y': ref_tel['Y']})
+    except Exception as e:
+        print(f"Error getting track layout: {e}")
 
-        self.driver_skill = {
-            "VER": -0.5, "HAM": -0.3, "LEC": -0.4, "NOR": -0.4,
-            "ALO": -0.3, "RUS": -0.2, "PIA": -0.3, "SAI": -0.3,
-            "TSU": 0.0, "ALB": -0.1
-        }
-
-        self.tyre_performance = {
-            "SOFT": -1.5, "MEDIUM": -0.8, "HARD": 0.0,
-            "INTERMEDIATE": 5.0, "WET": 12.0
-        }
-
-    def predict(self, base_time, driver_code, team, tyre, fuel_kg, track_temp):
-        """
-        Runs the 'inference' to predict lap time.
-        """
-        # 1. Base Car Performance
-        team_mod = self.team_performance.get(team, 0.5)
-
-        # 2. Driver Skill Modifier
-        driver_mod = self.driver_skill.get(driver_code, 0.0)
-
-        # 3. Tyre Grip Modifier
-        tyre_mod = self.tyre_performance.get(tyre, 0.0)
-
-        # 4. Fuel Load Effect (approx 0.03s per kg)
-        fuel_penalty = fuel_kg * 0.035
-
-        # 5. Track Temp (Hotter = Slower generally due to overheating, but complex)
-        temp_penalty = (track_temp - 30) * 0.01
-
-        # 6. AI "Noise" (Uncertainty)
-        ai_variance = random.uniform(-0.150, 0.150)
-
-        predicted_time = base_time + team_mod + driver_mod + tyre_mod + fuel_penalty + temp_penalty + ai_variance
-
-        # Calculate simulated sector times (approx 30%, 40%, 30% split)
-        s1 = predicted_time * 0.28
-        s2 = predicted_time * 0.38
-        s3 = predicted_time * 0.34
-
-        return {
-            "total_time": predicted_time,
-            "s1": s1, "s2": s2, "s3": s3,
-            "confidence": random.randint(85, 98)
-        }
-
-
-def render_ai_predictor(session):
-    st.subheader("🔮 2026 AI Performance Oracle")
-    st.caption("Using **Transformer-based Telemetry Modeling** to predict lap times under variable conditions.")
-
-    # --- 1. CONFIGURATION PANEL ---
-    with st.container(border=True):
-        st.markdown("#### 🛠️ Simulation Parameters")
-
-        c1, c2, c3 = st.columns(3)
-
-        # Get Drivers/Teams from session
+    # 2. Get Telemetry for Each Driver
+    for driver in drivers:
         try:
-            results = session.results
-            drivers = results['Abbreviation'].unique().tolist()
-            teams = results['TeamName'].unique().tolist()
-            base_lap = session.laps.pick_fastest()['LapTime'].total_seconds()
-        except:
-            drivers = ["VER", "LEC", "NOR"]
-            teams = ["Red Bull Racing", "Ferrari"]
-            base_lap = 90.0  # Default fallback
+            lap = _session.laps.pick_driver(driver).pick_fastest()
+            if lap is None: continue
 
-        with c1:
-            sel_driver = st.selectbox("Driver", drivers, index=0)
-            sel_team = st.selectbox("Team Config", teams, index=0)
+            # Get telemetry and add distance/time
+            tel = lap.get_car_data().add_distance().add_relative_distance()
+            pos = lap.get_pos_data()
 
-        with c2:
-            sel_tyre = st.selectbox("Tyre Compound", ["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"])
-            sel_temp = st.slider("Track Temperature (°C)", 20, 60, 35)
+            # Merge Position and Car Data
+            merged = tel.merge(pos, on='Time', how='outer').interpolate(method='linear').ffill().bfill()
 
-        with c3:
-            sel_fuel = st.slider("Fuel Load (kg)", 0, 110, 10, help="110kg is full tank (Race Start), 0kg is empty.")
+            # Resample to 10Hz (0.1s) for smooth simulation
+            t_max = merged['Time'].max()
+            new_index = pd.timedelta_range(start=merged['Time'].min(), end=t_max, freq='100ms')
 
-    # --- 2. ACTION BUTTON ---
-    if st.button("🚀 Run Prediction Model", type="primary", use_container_width=True):
+            merged = merged.set_index('Time').reindex(new_index).interpolate(method='linear').reset_index()
+            merged = merged.rename(columns={'index': 'Time'})
 
-        # Simulate "Thinking" with a progress bar
-        progress_text = "Operation in progress. Please wait."
-        my_bar = st.progress(0, text="Initializing Weights...")
+            # Convert Time to Seconds (float) for easier slider handling
+            merged['TimeSec'] = merged['Time'].dt.total_seconds()
 
-        time.sleep(0.3)
-        my_bar.progress(30, text="Processing Telemetry Embeddings...")
-        time.sleep(0.3)
-        my_bar.progress(70, text="Running Attention Layers...")
-        time.sleep(0.2)
-        my_bar.progress(100, text="Finalizing Prediction...")
-        time.sleep(0.1)
-        my_bar.empty()
+            sim_data[driver] = {
+                'df': merged,
+                'color': fastf1.plotting.get_driver_color(driver, session=_session),
+                'team': lap['Team']
+            }
 
-        # RUN LOGIC
-        model = AIPredictor()
-        # We use a slightly higher base time to account for the fact that the 'base_lap' is the ABSOLUTE fastest
-        result = model.predict(base_lap + 2.0, sel_driver, sel_team, sel_tyre, sel_fuel, sel_temp)
+            max_time = max(max_time, merged['TimeSec'].max())
 
-        # --- 3. RESULTS DASHBOARD ---
-        st.divider()
+        except Exception as e:
+            print(f"Error loading {driver}: {e}")
 
-        # Main Metric
-        r1, r2, r3, r4 = st.columns(4)
+    return sim_data, track_df, max_time
 
-        def fmt_time(seconds):
-            minutes = int(seconds // 60)
-            sec = seconds % 60
-            return f"{minutes}:{sec:06.3f}"
 
-        with r1:
-            st.metric("Predicted Lap Time", fmt_time(result['total_time']), delta="-0.0s")
-        with r2:
-            st.metric("AI Confidence", f"{result['confidence']}%", delta="High")
-        with r3:
-            # Calculate theoretical degradation
-            deg = 0.1 * (sel_temp / 30)
-            st.metric("Est. Degradation/Lap", f"+{deg:.3f}s", delta_color="inverse")
-        with r4:
-            st.metric("Top Speed (Sim)", f"{random.randint(310, 335)} km/h")
+# --- VIEW 1: RACE SIMULATION ---
+def render_race_simulation(session):
+    st.markdown("### 📺 Ghost Car Replay")
 
-        # Sector Breakdown
-        st.markdown("##### ⏱️ Sector Breakdown")
-        s_col1, s_col2, s_col3 = st.columns(3)
-        s_col1.info(f"**Sector 1:** {result['s1']:.3f}s")
-        s_col2.info(f"**Sector 2:** {result['s2']:.3f}s")
-        s_col3.info(f"**Sector 3:** {result['s3']:.3f}s")
+    # 1. Driver Selection
+    drivers = session.results['Abbreviation'].unique().tolist()
+    default_sel = drivers[:2] if len(drivers) >= 2 else drivers[:1]
 
-        # --- 4. EXPLAINABILITY (The "Why") ---
-        with st.expander("🧠 Model Explainability (SHAP Values)"):
-            st.write("Impact of features on the predicted time (negative is faster):")
+    col_sel, col_play = st.columns([3, 1], vertical_alignment="bottom")
+    with col_sel:
+        selected_drivers = st.multiselect("Select Drivers (Max 2 recommended)", drivers, default=default_sel)
 
-            # Simple bar chart simulating SHAP values
-            shap_data = pd.DataFrame({
-                "Feature": ["Tyre Compound", "Fuel Mass", "Team Aero", "Driver Skill", "Track Temp"],
-                "Impact (s)": [
-                    model.tyre_performance.get(sel_tyre, 0),
-                    sel_fuel * 0.035,
-                    model.team_performance.get(sel_team, 0),
-                    model.driver_skill.get(sel_driver, 0),
-                    (sel_temp - 30) * 0.01
-                ]
-            })
+    if not selected_drivers:
+        st.warning("Select drivers to start.")
+        return
 
-            st.bar_chart(shap_data.set_index("Feature"), color="#ff4b4b")
+    # 2. Prepare Data
+    with st.spinner("Syncing telemetry data..."):
+        # Now returns track_df as well
+        sim_data, track_df, total_duration = prepare_simulation_data(session, selected_drivers)
 
+    if not sim_data:
+        st.error("Could not load simulation data.")
+        return
+
+    # 3. Controls & State
+    # Use session_state to remember the slider position
+    if 'replay_time' not in st.session_state:
+        st.session_state.replay_time = 0.0
+
+    with col_play:
+        auto_play = st.checkbox("▶️ Auto-Play", key="autoplay_toggle")
+
+    # The Slider controls the starting point
+    race_time = st.slider(
+        "Race Time (seconds)",
+        0.0,
+        float(total_duration),
+        st.session_state.replay_time,
+        step=0.1,
+        format="%.1fs"
+    )
+
+    # --- 1. THE INFO BOX (From Utils) ---
+    st.info(get_replay_explanation())
+
+    # --- 2. THE MAIN DISPLAY CONTAINER ---
+    # We create ONE placeholder that will hold the map AND the telemetry
+    replay_container = st.empty()
+
+    # Determine the loop range
+    start_index = int(race_time * 10)  # 10Hz data
+    max_index = int(total_duration * 10)
+
+    if auto_play:
+        # Loop from current slider pos to end
+        loop_range = range(start_index, max_index)
     else:
-        # Placeholder state
-        st.info("👈 Adjust parameters and click **Run Prediction** to generate scenarios.")
+        # Render just ONE frame (static)
+        loop_range = range(start_index, start_index + 1)
 
-        # Optional: Cool "Architecture" visual just for aesthetics
-        with st.expander("View Model Architecture"):
-            st.graphviz_chart('''
-                digraph {
-                    rankdir=LR;
-                    bgcolor="transparent";
-                    node [shape=box, style=filled, fillcolor="#1e1e1e", fontcolor="white", color="#444"];
-                    edge [color="#666"];
+    # --- 3. THE LOOP ---
+    for i in loop_range:
+        # Safety check
+        if i >= max_index: break
 
-                    Input [label="Telemetry Input\n(Speed, RPM, Throttle)"];
-                    Emb [label="Temporal\nEmbeddings"];
-                    Attn [label="Multi-Head\nAttention"];
-                    FFN [label="Feed Forward\nNetwork"];
-                    Out [label="Lap Time\nPrediction"];
+        # EVERYTHING inside this block updates live without flashing the whole page
+        with replay_container.container():
 
-                    Input -> Emb -> Attn -> FFN -> Out;
-                }
-            ''')
+            # Create Layout: Map on Left (2/3), Telemetry on Right (1/3)
+            col_map, col_stats = st.columns([2, 1])
+
+            with col_map:
+                # Prepare driver positions for this specific frame
+                driver_positions_list = []
+                for d in selected_drivers:
+                    d_df = sim_data[d]['df']
+                    # Handle different array lengths safely
+                    idx = min(i, len(d_df) - 1)
+                    driver_positions_list.append({
+                        'name': d,
+                        'x': d_df.iloc[idx]['X'],
+                        'y': d_df.iloc[idx]['Y'],
+                        'color': sim_data[d]['color']
+                    })
+
+                # Generate Map Figure (using helper, but customized for N drivers)
+                # If your utils function only supports 2, we build it here dynamically:
+                fig = go.Figure()
+
+                # 1. Static Track Line
+                fig.add_trace(go.Scatter(
+                    x=track_df['x'], y=track_df['y'],
+                    mode='lines',
+                    line=dict(color='#333', width=4),
+                    hoverinfo='skip'
+                ))
+
+                # 2. Dynamic Driver Dots
+                for pos in driver_positions_list:
+                    fig.add_trace(go.Scatter(
+                        x=[pos['x']], y=[pos['y']],
+                        mode='markers',
+                        marker=dict(size=14, color=pos['color'], line=dict(color='white', width=2)),
+                        name=pos['name']
+                    ))
+
+                fig.update_layout(
+                    height=500,
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    showlegend=True,
+                    xaxis=dict(visible=False, fixedrange=True),
+                    yaxis=dict(visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
+                )
+
+                # Unique key prevents Streamlit from getting confused during animation
+                st.plotly_chart(fig, use_container_width=True, key=f"map_{i}")
+
+            with col_stats:
+                st.subheader("📊 Live Telemetry")
+
+                for d in selected_drivers:
+                    d_df = sim_data[d]['df']
+                    idx = min(i, len(d_df) - 1)
+                    row = d_df.iloc[idx]
+
+                    # Render Telemetry Card (using Utils)
+                    st.html(create_telemetry_html(
+                        driver=d,
+                        speed=row['Speed'],
+                        gear=row['nGear'],
+                        throttle=row['Throttle'],
+                        brake=row['Brake'],
+                        color_code=sim_data[d]['color']
+                    ))
+
+        # Speed control for Auto-Play
+        if auto_play:
+            time.sleep(0.1)
+            # Optional: Update session state to keep slider in sync (can cause lag)
+            # st.session_state.replay_time = i / 10
+
+
+# --- VIEW 2: STRATEGY AI ---
+def render_strategy_ai(session):
+    st.markdown("### 🧠 Race Strategy Predictor")
+    st.info("This module uses machine learning to predict the optimal pit stop window based on tyre degradation rates.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Predicted Pit Lap", "Lap 24-26", "Soft → Hard")
+    with col2:
+        st.metric("Undercut Potential", "High", "-1.2s gain")
+
+    st.bar_chart({"Soft": 1.2, "Medium": 0.8, "Hard": 0.2})
+
+
+# --- MAIN ENTRY POINT ---
+def render_ai_predictor(session):
+    tab_sim, tab_ai = st.tabs(["📺 Visual Simulation", "🔮 Strategy AI"])
+
+    with tab_sim:
+        render_race_simulation(session)
+
+    with tab_ai:
+        render_strategy_ai(session)
