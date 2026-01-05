@@ -6,7 +6,7 @@ import fastf1.plotting
 import numpy as np
 
 
-# --- HELPER: TRACK HEATMAP ---
+# --- HELPER: TRACK HEATMAP PLOTTER ---
 def plot_track_heatmap(session, driver, channel):
     """
     Plots the track map colored by a specific telemetry channel (Speed, Gear, Brake, etc.)
@@ -49,8 +49,9 @@ def plot_track_heatmap(session, driver, channel):
         points = np.array([x, y]).T.reshape(-1, 1, 2)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
-        # Plot
-        fig, ax = plt.subplots(figsize=(10, 8))
+        # Plot settings
+        # We make the figure square-ish to fit better in grid cards
+        fig, ax = plt.subplots(figsize=(8, 8))
         fig.patch.set_facecolor('none')
         ax.set_facecolor('none')
 
@@ -67,21 +68,46 @@ def plot_track_heatmap(session, driver, channel):
         ax.set_aspect('equal')
 
         # Colorbar
-        cbar = fig.colorbar(line, ax=ax, shrink=0.6, pad=0.02)
-        cbar.set_label(label, color='white', fontsize=12)
-        cbar.ax.yaxis.set_tick_params(color='white')
-        plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='white')
+        cbar = fig.colorbar(line, ax=ax, shrink=0.7, pad=0.05, location='bottom')
+        cbar.set_label(label, color='white', fontsize=10)
+        cbar.ax.xaxis.set_tick_params(color='white')  # Bottom colorbar uses xaxis
+        plt.setp(plt.getp(cbar.ax.axes, 'xticklabels'), color='white')
 
         # Title
-        ax.set_title(f"{driver} - {channel} Visualization", color='white', fontsize=14)
+        ax.set_title(f"{driver}", color='white', fontsize=14, fontweight='bold')
 
         return fig
 
     except Exception as e:
-        st.error(f"Error plotting heatmap: {e}")
+        st.error(f"Error plotting heatmap for {driver}: {e}")
         return None
 
 
+# --- HELPER: POPUP DIALOG ---
+@st.dialog("🗺️ Track Map Heatmaps", width="large")
+def show_heatmap_dialog(session, drivers, channel):
+    st.markdown(f"Comparing **{channel}** across selected drivers.")
+
+    # Grid Logic: 5 Drivers per row
+    cols_per_row = 5
+
+    # Loop through drivers in chunks of 5
+    for i in range(0, len(drivers), cols_per_row):
+        # Create a new row of columns
+        cols = st.columns(cols_per_row)
+
+        # Get the batch of up to 5 drivers
+        batch = drivers[i: i + cols_per_row]
+
+        for j, driver_abbr in enumerate(batch):
+            with cols[j]:
+                with st.spinner(f"Loading {driver_abbr}..."):
+                    fig_map = plot_track_heatmap(session, driver_abbr, channel)
+                    if fig_map:
+                        st.pyplot(fig_map, use_container_width=True)
+
+
+# --- MAIN RENDER FUNCTION ---
 def render_telemetry_view(session):
     st.subheader("Driver Comparison")
 
@@ -93,8 +119,9 @@ def render_telemetry_view(session):
         st.error("No driver data found.")
         return
 
-    # Layout
-    col_sel1, col_sel2, col_sel3 = st.columns([2, 1, 1])
+    # Layout: Drivers | Channel | Corner | Heatmap Button
+    # Adjusted ratios to fit the button comfortably
+    col_sel1, col_sel2, col_sel3, col_sel4 = st.columns([2, 1, 1, 0.8])
 
     with col_sel1:
         default_sel = drivers_list[:2] if len(drivers_list) >= 2 else drivers_list[:1]
@@ -107,7 +134,6 @@ def render_telemetry_view(session):
             index=0
         )
 
-    # Corner Selection
     with col_sel3:
         try:
             circuit_info = session.get_circuit_info()
@@ -122,7 +148,17 @@ def render_telemetry_view(session):
 
         selected_corner = st.selectbox("Corner Focus", turn_options)
 
-    # --- MAIN TELEMETRY PLOT ---
+    # --- BUTTON TO TRIGGER POPUP ---
+    with col_sel4:
+        st.write("")  # Spacer to align button with dropdowns
+        st.write("")
+        if st.button("🗺️ Heatmaps", help="View track map comparison", use_container_width=True):
+            if drivers:
+                show_heatmap_dialog(session, drivers, telemetry_channel)
+            else:
+                st.warning("Select drivers first!")
+
+    # --- MAIN LINE CHART (Always Visible) ---
     if drivers:
         fig, ax = plt.subplots(figsize=(10, 5))
         fig.patch.set_facecolor('none')
@@ -147,9 +183,10 @@ def render_telemetry_view(session):
             except:
                 pass
 
-        # Apply Zoom
+        # Apply Corner Zoom
         if selected_corner != "Full Lap" and circuit_info is not None:
             turn_label = selected_corner.replace("Turn ", "")
+            # Robust matching for turn labels (handles "1" vs "01" string issues)
             corner_data = circuit_info.corners[
                 circuit_info.corners['Number'].astype(str) + circuit_info.corners['Letter'] == turn_label]
 
@@ -176,19 +213,3 @@ def render_telemetry_view(session):
 
         if selected_corner != "Full Lap":
             st.info(f"🔎 **Zoomed in on {selected_corner}:** Analyzing braking zone and corner exit (±400m).")
-
-        st.divider()
-
-    # --- NEW FEATURE: TRACK MAP HEATMAP ---
-    # This sits below the main graph to give context to the data
-    if drivers:
-        st.subheader(f"🗺️ Track Map Visualization: {telemetry_channel}")
-
-        # Create columns to show maps side-by-side if multiple drivers selected
-        cols = st.columns(len(drivers))
-
-        for idx, driver_abbr in enumerate(drivers):
-            with cols[idx]:
-                fig_map = plot_track_heatmap(session, driver_abbr, telemetry_channel)
-                if fig_map:
-                    st.pyplot(fig_map)
