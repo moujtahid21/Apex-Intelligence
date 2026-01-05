@@ -120,6 +120,9 @@ apex-intelligence/
 ---
 
 ## 🤝 Credits & Acknowledgements
+If you want to use this project or contribute, please give credit to the original author.
+``Author: Abdelbasset Moujtahid
+Source: https://github.com/moujtahid21/Apex-Intelligence``
 
 * **Data Source:** [FastF1 Library](https://github.com/theOehrly/Fast-F1) (uses F1 live timing data).
 * **Visualization:** Matplotlib & Seaborn.
