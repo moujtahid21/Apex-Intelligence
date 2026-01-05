@@ -91,116 +91,122 @@ def render_race_simulation(session):
         st.error("Could not load simulation data.")
         return
 
-    # 3. CONTROLS & STATE MANAGEMENT
-    # Initialize state
+    # 3. Controls & State
     if 'replay_time' not in st.session_state:
-        st.session_state['replay_time'] = 0.0
+        st.session_state.replay_time = 0.0
 
     with col_play:
+        # Note: In this loop version, we don't need to bind this to rerun logic
         auto_play = st.checkbox("▶️ Auto-Play", key="autoplay_toggle")
 
-    # --- FIX: UPDATE STATE *BEFORE* WIDGET CREATION ---
-    # We update the time first, so when the slider renders below,
-    # it picks up the NEW value immediately.
-    if auto_play:
-        if st.session_state['replay_time'] < total_duration:
-            st.session_state['replay_time'] += 0.1
-        else:
-            st.session_state['replay_time'] = 0.0
-
-    # 4. SLIDER (Directly bound to state)
-    st.slider(
+    # The Slider controls the starting point
+    race_time = st.slider(
         "Race Time (seconds)",
-        min_value=0.0,
-        max_value=float(total_duration),
+        0.0,
+        float(total_duration),
+        st.session_state.replay_time,
         step=0.1,
-        key="replay_time",  # This reads the updated value from above
         format="%.1fs"
     )
-
-    # Use the current state for rendering
-    current_time = st.session_state['replay_time']
 
     # --- 1. THE INFO BOX ---
     st.info(get_replay_explanation())
 
-    # --- 2. THE MAIN DISPLAY ---
-    # Calculate current index based on time
-    current_index = int(current_time * 10)
-    current_index = min(current_index, int(total_duration * 10) - 1)
+    # --- 2. THE MAIN DISPLAY CONTAINER ---
+    # We create ONE placeholder that will hold the map AND the telemetry
+    replay_container = st.empty()
 
-    # Create Layout: Map on Left (2/3), Telemetry on Right (1/3)
-    col_map, col_stats = st.columns([2, 1])
+    # Determine the loop range
+    start_index = int(race_time * 10)  # 10Hz data
+    max_index = int(total_duration * 10)
 
-    with col_map:
-        # Prepare driver positions
-        driver_positions_list = []
-        for d in selected_drivers:
-            d_df = sim_data[d]['df']
-            idx = min(current_index, len(d_df) - 1)
-            driver_positions_list.append({
-                'name': d,
-                'x': d_df.iloc[idx]['X'],
-                'y': d_df.iloc[idx]['Y'],
-                'color': sim_data[d]['color']
-            })
-
-        fig = go.Figure()
-
-        # Static Track Line
-        fig.add_trace(go.Scatter(
-            x=track_df['x'], y=track_df['y'],
-            mode='lines',
-            line=dict(color='#333', width=4),
-            hoverinfo='skip',
-            showlegend=False
-        ))
-
-        # Dynamic Driver Dots
-        for pos in driver_positions_list:
-            fig.add_trace(go.Scatter(
-                x=[pos['x']], y=[pos['y']],
-                mode='markers',
-                marker=dict(size=14, color=pos['color'], line=dict(color='white', width=2)),
-                name=pos['name']
-            ))
-
-        fig.update_layout(
-            height=500,
-            margin=dict(l=0, r=0, t=0, b=0),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            showlegend=True,
-            xaxis=dict(visible=False, fixedrange=True),
-            yaxis=dict(visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
-        )
-
-        st.plotly_chart(fig, use_container_width=True, key="live_map")
-
-    with col_stats:
-        st.subheader("📊 Live Telemetry")
-
-        for d in selected_drivers:
-            d_df = sim_data[d]['df']
-            idx = min(current_index, len(d_df) - 1)
-            row = d_df.iloc[idx]
-
-            # Render Telemetry Card
-            st.html(create_telemetry_html(
-                driver=d,
-                speed=row['Speed'],
-                gear=row['nGear'],
-                throttle=row['Throttle'],
-                brake=row['Brake'],
-                color_code=sim_data[d]['color']
-            ))
-
-    # --- 3. ANIMATION TRIGGER ---
-    # If auto-play is ON, we simply wait a tiny bit and then rerun.
-    # The math for the NEXT frame will happen at the top of the NEXT run.
     if auto_play:
-        time.sleep(0.1)
-        st.rerun()
+        # Loop from current slider pos to end
+        loop_range = range(start_index, max_index)
+    else:
+        # Render just ONE frame (static)
+        loop_range = range(start_index, start_index + 1)
+
+    # --- 3. THE LOOP ---
+    for i in loop_range:
+        # Safety check
+        if i >= max_index: break
+
+        # EVERYTHING inside this block updates live without flashing the whole page
+        with replay_container.container():
+
+            # Create Layout: Map on Left (2/3), Telemetry on Right (1/3)
+            col_map, col_stats = st.columns([2, 1])
+
+            with col_map:
+                # Prepare driver positions for this specific frame
+                driver_positions_list = []
+                for d in selected_drivers:
+                    d_df = sim_data[d]['df']
+                    idx = min(i, len(d_df) - 1)
+                    driver_positions_list.append({
+                        'name': d,
+                        'x': d_df.iloc[idx]['X'],
+                        'y': d_df.iloc[idx]['Y'],
+                        'color': sim_data[d]['color']
+                    })
+
+                # Generate Map Figure
+                fig = go.Figure()
+
+                # 1. Static Track Line
+                fig.add_trace(go.Scatter(
+                    x=track_df['x'], y=track_df['y'],
+                    mode='lines',
+                    line=dict(color='#333', width=4),
+                    hoverinfo='skip',
+                    showlegend=False
+                ))
+
+                # 2. Dynamic Driver Dots
+                for pos in driver_positions_list:
+                    fig.add_trace(go.Scatter(
+                        x=[pos['x']], y=[pos['y']],
+                        mode='markers',
+                        marker=dict(size=14, color=pos['color'], line=dict(color='white', width=2)),
+                        name=pos['name']
+                    ))
+
+                fig.update_layout(
+                    height=500,
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    showlegend=True,
+                    xaxis=dict(visible=False, fixedrange=True),
+                    yaxis=dict(visible=False, fixedrange=True, scaleanchor="x", scaleratio=1)
+                )
+
+                # Unique key is REQUIRED here to force Plotly to update inside a loop.
+                # This causes the slight flicker, but enables the smooth loop animation.
+                st.plotly_chart(fig, use_container_width=True, key=f"map_{i}")
+
+            with col_stats:
+                st.subheader("📊 Live Telemetry")
+
+                for d in selected_drivers:
+                    d_df = sim_data[d]['df']
+                    idx = min(i, len(d_df) - 1)
+                    row = d_df.iloc[idx]
+
+                    # Render Telemetry Card
+                    st.html(create_telemetry_html(
+                        driver=d,
+                        speed=row['Speed'],
+                        gear=row['nGear'],
+                        throttle=row['Throttle'],
+                        brake=row['Brake'],
+                        color_code=sim_data[d]['color']
+                    ))
+
+        # Speed control for Auto-Play
+        if auto_play:
+            time.sleep(0.1)
 
 
 # --- VIEW 2: STRATEGY AI ---
