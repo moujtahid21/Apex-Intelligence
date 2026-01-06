@@ -210,5 +210,59 @@ def render_telemetry_view(session):
 
         st.pyplot(fig)
 
+        # --- NEW: CORNER STATISTICS TABLE ---
+        if selected_corner != "Full Lap" and circuit_info is not None:
+            st.info(f"🔎 **Zoomed in on {selected_corner}:** Analyzing braking zone and corner exit (±400m).")
+
+            # 1. Get Corner Center
+            turn_label = selected_corner.replace("Turn ", "")
+            corner_row = circuit_info.corners[
+                circuit_info.corners['Number'].astype(str) + circuit_info.corners['Letter'] == turn_label
+                ]
+
+            if not corner_row.empty:
+                apex_dist = corner_row.iloc[0]['Distance']
+
+                # 2. Calculate Stats for each driver
+                corner_stats = []
+
+                for driver in drivers:
+                    try:
+                        # Get data
+                        laps = session.laps.pick_driver(driver).pick_fastest()
+                        car_data = laps.get_car_data().add_distance()
+
+                        # Filter to specific points
+                        # Apex: Min speed within ±50m of apex
+                        apex_zone = car_data[
+                            (car_data['Distance'] > apex_dist - 50) & (car_data['Distance'] < apex_dist + 50)]
+                        min_speed = apex_zone['Speed'].min()
+
+                        # Entry: Speed exactly 100m before apex
+                        entry_zone = car_data.iloc[(car_data['Distance'] - (apex_dist - 100)).abs().argsort()[:1]]
+                        entry_speed = entry_zone['Speed'].values[0] if not entry_zone.empty else 0
+
+                        # Exit: Speed exactly 100m after apex
+                        exit_zone = car_data.iloc[(car_data['Distance'] - (apex_dist + 100)).abs().argsort()[:1]]
+                        exit_speed = exit_zone['Speed'].values[0] if not exit_zone.empty else 0
+
+                        corner_stats.append({
+                            "Driver": driver,
+                            "Entry Speed (km/h)": round(entry_speed, 1),
+                            "Apex Speed (km/h)": round(min_speed, 1),
+                            "Exit Speed (km/h)": round(exit_speed, 1)
+                        })
+                    except Exception:
+                        pass
+
+                # 3. Display as a Clean Table
+                if corner_stats:
+                    st.write("#### ⚡ Corner Performance Metrics")
+                    st.dataframe(
+                        corner_stats,
+                        hide_index=True,
+                        use_container_width=True
+                    )
+
         if selected_corner != "Full Lap":
             st.info(f"🔎 **Zoomed in on {selected_corner}:** Analyzing braking zone and corner exit (±400m).")
