@@ -14,7 +14,7 @@ def render_driver_card(lap_time, driver_name, team_name, rating):
         rating_val = "N/A"
         rating_width = 0
 
-    # HTML must start at the beginning of the line!
+
     html_code = f"""
 <div style='text-align: center; margin-top: -10px;'>
     <div style='margin-bottom: 5px;'>
