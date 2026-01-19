@@ -4,7 +4,6 @@ import fastf1.plotting
 import matplotlib.pyplot as plt
 import os
 
-# --- IMPORT COMPONENTS ---
 try:
     from components.event_overview import render_event_overview
     from components.telemetry_view import render_telemetry_view
@@ -13,7 +12,7 @@ try:
 except ImportError as e:
     st.error(f"❌ Component Import Error: {e}")
 
-# 1. SETUP
+
 st.set_page_config(page_title="Apex Intelligence", layout="wide")
 fastf1.plotting.setup_mpl(mpl_timedelta_support=True, misc_mpl_mods=False, color_scheme='fastf1')
 
@@ -21,14 +20,14 @@ if not os.path.exists('cache'):
     os.makedirs('cache')
 fastf1.Cache.enable_cache('cache')
 
-# 2. LOAD DATA
+
 @st.cache_data
 def load_session_data(year, gp, session_type):
     session = fastf1.get_session(year, gp, session_type)
     session.load()
     return session
 
-# 3. SIDEBAR
+
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/F1.svg/1200px-F1.svg.png", width=100)
 st.sidebar.title("F1 Telemetry & AI")
 
@@ -51,11 +50,9 @@ if st.sidebar.button("Load Session Data", type="primary"):
         except Exception as e:
             st.error(f"Error loading data: {e}")
 
-# 4. MAIN APP LOGIC
 if 'session' in st.session_state:
     session = st.session_state['session']
 
-    # --- NAVIGATION ---
     st.html("""
         <style>
             div.stRadio > div[role="radiogroup"] {
@@ -85,7 +82,7 @@ if 'session' in st.session_state:
         key="current_view_selection"
     )
 
-    # --- RENDER SELECTED VIEW ---
+
 
     try:
         if selected_view_name == "🏁 Event Overview":
