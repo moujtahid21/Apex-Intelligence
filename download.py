@@ -13,12 +13,9 @@ class F1DataLoader:
         """
         self.year = year
         self.sessions_to_load = sessions
-        self.data = {}  # nested dictionary: data[gp][session][driver] = {...}
+        self.data = {}
         self.schedule = None
-
-    # ----------------------------
-    # Load full event schedule
-    # ----------------------------
+        
     def load_event_schedule(self):
         """
         Load full season schedule
@@ -26,9 +23,7 @@ class F1DataLoader:
         self.schedule = fastf1.get_event_schedule(self.year)
         return self.schedule
 
-    # ----------------------------
-    # Load all events, sessions, drivers
-    # ----------------------------
+
     def load_season_data(self, progress_bar=True):
         """
         Loop through all events and sessions, fetching all relevant data automatically
@@ -41,11 +36,10 @@ class F1DataLoader:
 
             for session_id in self.sessions_to_load:
                 try:
-                    # Load session
                     session = fastf1.get_session(self.year, gp_name, session_id)
                     session.load()
 
-                    # Initialize storage
+                
                     self.data[gp_name][session_id] = {
                         'laps': session.laps,
                         'results': None,
@@ -56,13 +50,13 @@ class F1DataLoader:
                         'telemetry': {}
                     }
 
-                    # Session results (may not exist for practice)
+                 
                     try:
                         self.data[gp_name][session_id]['results'] = session.results
                     except Exception:
                         self.data[gp_name][session_id]['results'] = None
 
-                    # Driver telemetry
+                 
                     for driver in session.drivers:
                         driver_laps = session.laps.pick_driver(driver)
                         fastest_lap = driver_laps.pick_fastest() if not driver_laps.empty else None
@@ -77,9 +71,7 @@ class F1DataLoader:
                 except Exception as e:
                     print(f"Skipping {gp_name} {session_id} due to error: {e}")
 
-    # ----------------------------
-    # Getter functions
-    # ----------------------------
+  
     def get_driver_telemetry(self, gp_name, session_id, driver):
         try:
             return self.data[gp_name][session_id]['telemetry'][driver]['telemetry']
