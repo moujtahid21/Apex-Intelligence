@@ -6,24 +6,20 @@ import fastf1.plotting
 import numpy as np
 
 
-# --- HELPER: TRACK HEATMAP PLOTTER ---
 def plot_track_heatmap(session, driver, channel):
     """
     Plots the track map colored by a specific telemetry channel (Speed, Gear, Brake, etc.)
     """
     try:
-        # Get fastest lap telemetry
         lap = session.laps.pick_driver(driver).pick_fastest()
         if lap is None:
             return None
 
         telemetry = lap.get_telemetry()
 
-        # Prepare Data
         x = telemetry['X'].values
         y = telemetry['Y'].values
 
-        # Select data based on channel
         if channel == "Speed":
             z = telemetry['Speed']
             label = "Speed (km/h)"
@@ -45,35 +41,28 @@ def plot_track_heatmap(session, driver, channel):
             label = "Speed"
             cmap = 'plasma'
 
-        # Create Line Segments for Color Mapping
         points = np.array([x, y]).T.reshape(-1, 1, 2)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
-        # Plot settings
-        # We make the figure square-ish to fit better in grid cards
         fig, ax = plt.subplots(figsize=(8, 8))
         fig.patch.set_facecolor('none')
         ax.set_facecolor('none')
 
-        # Create Line Collection
         norm = plt.Normalize(z.min(), z.max())
         lc = LineCollection(segments, cmap=cmap, norm=norm, linestyle='-', linewidth=5)
         lc.set_array(z)
         line = ax.add_collection(lc)
 
-        # Map bounds
         ax.set_xlim(x.min() - 200, x.max() + 200)
         ax.set_ylim(y.min() - 200, y.max() + 200)
         ax.axis('off')
         ax.set_aspect('equal')
 
-        # Colorbar
         cbar = fig.colorbar(line, ax=ax, shrink=0.7, pad=0.05, location='bottom')
         cbar.set_label(label, color='white', fontsize=10)
-        cbar.ax.xaxis.set_tick_params(color='white')  # Bottom colorbar uses xaxis
+        cbar.ax.xaxis.set_tick_params(color='white') 
         plt.setp(plt.getp(cbar.ax.axes, 'xticklabels'), color='white')
 
-        # Title
         ax.set_title(f"{driver}", color='white', fontsize=14, fontweight='bold')
 
         return fig
@@ -82,21 +71,15 @@ def plot_track_heatmap(session, driver, channel):
         st.error(f"Error plotting heatmap for {driver}: {e}")
         return None
 
-
-# --- HELPER: POPUP DIALOG ---
 @st.dialog("🗺️ Track Map Heatmaps", width="large")
 def show_heatmap_dialog(session, drivers, channel):
     st.markdown(f"Comparing **{channel}** across selected drivers.")
 
-    # Grid Logic: 5 Drivers per row
     cols_per_row = 5
 
-    # Loop through drivers in chunks of 5
     for i in range(0, len(drivers), cols_per_row):
-        # Create a new row of columns
         cols = st.columns(cols_per_row)
 
-        # Get the batch of up to 5 drivers
         batch = drivers[i: i + cols_per_row]
 
         for j, driver_abbr in enumerate(batch):
@@ -107,11 +90,9 @@ def show_heatmap_dialog(session, drivers, channel):
                         st.pyplot(fig_map, use_container_width=True)
 
 
-# --- MAIN RENDER FUNCTION ---
 def render_telemetry_view(session):
     st.subheader("Driver Comparison")
 
-    # 1. Driver Selection
     try:
         driver_map = session.results.set_index('Abbreviation')['FullName'].to_dict()
         drivers_list = list(driver_map.keys())
@@ -119,8 +100,6 @@ def render_telemetry_view(session):
         st.error("No driver data found.")
         return
 
-    # Layout: Drivers | Channel | Corner | Heatmap Button
-    # Adjusted ratios to fit the button comfortably
     col_sel1, col_sel2, col_sel3, col_sel4 = st.columns([2, 1, 1, 0.8], vertical_alignment="bottom")
 
     with col_sel1:
@@ -148,16 +127,14 @@ def render_telemetry_view(session):
 
         selected_corner = st.selectbox("Corner Focus", turn_options)
 
-    # --- BUTTON TO TRIGGER POPUP ---
     with col_sel4:
-        st.write('')  # Spacer for alignment
+        st.write('') 
         if st.button("🗺️ Heatmaps", help="View track map comparison", use_container_width=True):
             if drivers:
                 show_heatmap_dialog(session, drivers, telemetry_channel)
             else:
                 st.warning("Select drivers first!")
 
-    # --- MAIN LINE CHART (Always Visible) ---
     if drivers:
         fig, ax = plt.subplots(figsize=(10, 5))
         fig.patch.set_facecolor('none')
@@ -182,10 +159,8 @@ def render_telemetry_view(session):
             except:
                 pass
 
-        # Apply Corner Zoom
         if selected_corner != "Full Lap" and circuit_info is not None:
             turn_label = selected_corner.replace("Turn ", "")
-            # Robust matching for turn labels (handles "1" vs "01" string issues)
             corner_data = circuit_info.corners[
                 circuit_info.corners['Number'].astype(str) + circuit_info.corners['Letter'] == turn_label]
 
@@ -197,7 +172,6 @@ def render_telemetry_view(session):
                 ax.axvline(center_dist, color='white', linestyle=':', alpha=0.3, label="Apex")
                 ax.text(center_dist, ax.get_ylim()[1], "APEX", color='white', fontsize=8, alpha=0.5, ha='center')
 
-        # Styling
         units = {"Speed": "km/h", "Throttle": "%", "Brake": "%", "RPM": "rpm", "nGear": "Gear #", "DRS": "Status"}
         ax.set_ylabel(f"{telemetry_channel} ({units.get(telemetry_channel, '')})", color='white')
         ax.set_xlabel("Distance (m)", color='white')
@@ -210,11 +184,9 @@ def render_telemetry_view(session):
 
         st.pyplot(fig)
 
-        # --- NEW: CORNER STATISTICS TABLE ---
         if selected_corner != "Full Lap" and circuit_info is not None:
             st.info(f"🔎 **Zoomed in on {selected_corner}:** Analyzing braking zone and corner exit (±400m).")
 
-            # 1. Get Corner Center
             turn_label = selected_corner.replace("Turn ", "")
             corner_row = circuit_info.corners[
                 circuit_info.corners['Number'].astype(str) + circuit_info.corners['Letter'] == turn_label
@@ -223,26 +195,20 @@ def render_telemetry_view(session):
             if not corner_row.empty:
                 apex_dist = corner_row.iloc[0]['Distance']
 
-                # 2. Calculate Stats for each driver
                 corner_stats = []
 
                 for driver in drivers:
                     try:
-                        # Get data
                         laps = session.laps.pick_driver(driver).pick_fastest()
                         car_data = laps.get_car_data().add_distance()
 
-                        # Filter to specific points
-                        # Apex: Min speed within ±50m of apex
                         apex_zone = car_data[
                             (car_data['Distance'] > apex_dist - 50) & (car_data['Distance'] < apex_dist + 50)]
                         min_speed = apex_zone['Speed'].min()
 
-                        # Entry: Speed exactly 100m before apex
                         entry_zone = car_data.iloc[(car_data['Distance'] - (apex_dist - 100)).abs().argsort()[:1]]
                         entry_speed = entry_zone['Speed'].values[0] if not entry_zone.empty else 0
 
-                        # Exit: Speed exactly 100m after apex
                         exit_zone = car_data.iloc[(car_data['Distance'] - (apex_dist + 100)).abs().argsort()[:1]]
                         exit_speed = exit_zone['Speed'].values[0] if not exit_zone.empty else 0
 
@@ -255,7 +221,6 @@ def render_telemetry_view(session):
                     except Exception:
                         pass
 
-                # 3. Display as a Clean Table
                 if corner_stats:
                     st.write("#### ⚡ Corner Performance Metrics")
                     st.dataframe(
